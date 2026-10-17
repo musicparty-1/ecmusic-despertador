@@ -1,0 +1,44 @@
+# Mantiene despierta la base de EC Music en Render (el plan gratis se duerme a los 15 minutos sin uso y el primero que
+# entra espera entre 30 y 60 segundos). Cada 10 minutos consulta una ruta liviana que no toca la base de datos.
+name: Despertar la base de EC Music
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+    # El 1 de cada mes deja una marca en el repositorio: GitHub apaga las tareas programadas de los repositorios sin
+    # movimiento durante 60 días
+    - cron: '0 12 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  despertar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Consultar la base
+        run: |
+          for intento in 1 2 3; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' --max-time 70 https://ecmusic-api.onrender.com/api || true)
+            echo "intento $intento: $codigo"
+            if [ "$codigo" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "La base no respondió"
+          exit 1
+
+  marca-mensual:
+    if: github.event.schedule == '0 12 1 * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dejar una marca
+        run: |
+          date -u +%Y-%m-%d > ultima-marca.txt
+          git config user.name "despertador"
+          git config user.email "despertador@users.noreply.github.com"
+          git add ultima-marca.txt
+          git commit -m "Marca mensual para que la tarea siga activa" || exit 0
+          git push
